@@ -4,7 +4,7 @@ Secure your Kubernetes applications running inside Amazon EKS by integrating the
 
 ---
 
-## 🏗️ Architecture Flow
+##  Architecture Flow
 
 ![EKS IRSA Architecture Flow](architecture.png)
 
@@ -17,7 +17,7 @@ Secure your Kubernetes applications running inside Amazon EKS by integrating the
 
 ---
 
-## 📖 Key Concepts
+##  Key Concepts
 
 ### What is OIDC (OpenID Connect)?
 OpenID Connect (OIDC) is an identity layer built on top of the OAuth 2.0 protocol. It allows clients to verify the identity of users or systems based on authentication performed by an Authorization Server. In EKS, the cluster acts as an OIDC identity provider, signing JWT tokens representing Kubernetes service accounts.
@@ -32,7 +32,7 @@ IRSA requires OIDC to act as the bridge between Kubernetes and AWS IAM:
 
 ---
 
-## 🛠️ Step-by-Step Implementation Guide
+##  Step-by-Step Implementation Guide
 
 ### 1. Prerequisites
 Before beginning, ensure you have:
@@ -196,7 +196,7 @@ kubectl apply -f deployment.yaml
 
 ---
 
-## 🔍 Validation
+##  Validation
 
 To verify the setup, run the following diagnostic commands:
 
@@ -269,7 +269,7 @@ This shows the startup connection check, successful write execution, and the fin
 
 ---
 
-## 🔒 Security Best Practices
+##  Security Best Practices
 
 1. **Zero Hardcoded Secrets**: Never place AWS access keys, secret keys, or profile credentials inside Docker images, git repositories, or Kubernetes secrets/configs.
 2. **Principle of Least Privilege**: Limit the attached IAM policy resource constraint to the specific DynamoDB table ARN rather than `*`. Ensure actions are constrained to read/write patterns required by the app.
