@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eks-irsa-app-code
+  namespace: default
+data:
+  app.py: |
+    import os
+    import sys
+    import time
+    import boto3
+    from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
+
+    TABLE_NAME = "demo"
+    REGION_NAME = os.environ.get("AWS_REGION", "us-east-1")
+
+    def print_irsa_environment():
+        print("=" * 60)
+        print("IRSA ENVIRONMENT VARIABLES CHECK")
+        print("=" * 60)
+        
+        role_arn = os.environ.get("AWS_ROLE_ARN")
+        token_file = os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")
+        
+        if role_arn:
+            print(f"✓ AWS_ROLE_ARN: {role_arn}")
+        else:
+            print("✗ AWS_ROLE_ARN is NOT set in this pod's environment.")
+            
+        if token_file:
+            print(f"✓ AWS_WEB_IDENTITY_TOKEN_FILE: {token_file}")
+            if os.path.exists(token_file):
+                print("  ✓ Token file exists and is accessible.")
+            else:
+                print("  ✗ Token file does NOT exist at the specified path.")
+        else:
+            print("✗ AWS_WEB_IDENTITY_TOKEN_FILE is NOT set in this pod's environment.")
+        
+        print("=" * 60 + "\n")
+
+    def test_dynamodb_access():
+        print("Connecting to DynamoDB...")
+        try:
+            dynamodb = boto3.resource('dynamodb', region_name=REGION_NAME)
+            table = dynamodb.Table(TABLE_NAME)
+            
+            item_id = f"item-{int(time.time())}"
+            print(f"Attempting to write item: {{ 'Id': '{item_id}', 'Source': 'EKS Pod', 'Status': 'Success' }}")
+            table.put_item(
+                Item={
+                    'Id': item_id,
+                    'Source': 'EKS Pod',
+                    'Status': 'Success',
+                    'Timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }
+            )
+            print("✓ Write operation successful!")
+            
+            print(f"Attempting to scan table '{TABLE_NAME}'...")
+            response = table.scan()
+            items = response.get('Items', [])
+            
+            print(f"✓ Scan operation successful! Found {len(items)} items:")
+            for item in items:
+                print(f"  - {item}")
+                
+        except NoCredentialsError:
+            print("✗ ERROR: AWS credentials could not be found.")
+            print("  Ensure that IRSA is correctly configured, the ServiceAccount annotation is present,")
+            print("  and the pod has been restarted since the ServiceAccount was attached.")
+            sys.exit(1)
+            
+        except PartialCredentialsError:
+            print("✗ ERROR: Incomplete AWS credentials configured.")
+            sys.exit(1)
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            print(f"✗ AWS CLIENT ERROR [{error_code}]: {error_message}")
+            if error_code == "AccessDeniedException":
+                print("  Troubleshooting tips:")
+                print("  1. Verify the IAM Role trust policy allows the OIDC Provider to assume the role.")
+                print("  2. Verify the IAM Policy attached to the role permits DynamoDB access on this table.")
+                print("  3. Verify the OIDC provider URL is correct.")
+            sys.exit(1)
+            
+        except Exception as e:
+            print(f"✗ UNEXPECTED ERROR: {str(e)}")
+            sys.exit(1)
+
+    if __name__ == "__main__":
+        print_irsa_environment()
+        test_dynamodb_access()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eks-irsa-demo-app
+  namespace: default
+  labels:
+    app: eks-irsa-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eks-irsa-demo
+  template:
+    metadata:
+      labels:
+        app: eks-irsa-demo
+    spec:
+      serviceAccountName: irsa-sa
+      containers:
+      - name: app
+        image: python:3.10-slim
+        # Set region environment variable
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Installing boto3..."
+          pip install boto3 --quiet
+          echo "Executing application..."
+          python /app/app.py
+          echo "Application execution finished. Keeping pod alive for validation..."
+          tail -f /dev/null
+        volumeMounts:
+        - name: app-volume
+          mountPath: /app
+      volumes:
+      - name: app-volume
+        configMap:
+          name: eks-irsa-app-code
